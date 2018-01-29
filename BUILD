@@ -1,0 +1,17 @@
+cc_library(
+	name = "gaussian-interpolator",
+	srcs = ["GaussianInterpolator.cpp"],
+	hdrs = ["GaussianInterpolator.hpp"],
+	deps = ["//src/brownian-motion:2d-brownian-motion",
+		"//src/nlopt:nlopt",
+		"//src/images-expansion:2d-advection-diffusion-images"],
+	copts = ["-Isrc/igraph-0.7.1/include",
+	      	 "-Isrc/brownian-motion",
+		 "-Isrc/nlopt/api",
+	      	 "-Isrc/multivariate-normal",
+		 "-Isrc/images-expansion",
+		 "-O3",
+		 "-fopenmp"],
+	linkopts = ["-lm", "-lgsl", "-lgslcblas", "-fopenmp"],			
+	visibility = ["//visibility:public"],
+)
