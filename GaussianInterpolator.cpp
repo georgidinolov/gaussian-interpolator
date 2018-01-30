@@ -1,4 +1,5 @@
 #include "GaussianInterpolator.hpp"
+#include "src/multivariate-normal/MultivariateNormal.hpp"
 
 double GaussianInterpolator::likelihood_point_distance(const likelihood_point& lp1,
 						       const likelihood_point& lp2,
@@ -262,5 +263,47 @@ double GaussianInterpolator::prediction_variance(const likelihood_point& x)
   gsl_blas_ddot(&work_view.vector, c, &out);
 
   out = parameters.tau_2 - out;
+  return out;
+}
+
+double optimization_wrapper(const std::vector<double> &x,
+			    std::vector<double> &grad,
+			    void * data)
+{
+  GaussianInterpolator * GP_ptr=
+    reinterpret_cast<GaussianInterpolator*>(data);
+  
+  parameters_nominal params = parameters_nominal(x);
+  //   GP_ptr->parameters;
+  // std::vector<double> params_as_vec = params.as_vector();
+  // for (unsigned i=0; i<x.size(); ++i) {
+  //   params_as_vec[i+1] = x[i];
+  // }
+  // params = parameters_nominal(params_as_vec);
+
+  std::cout << params;
+  GP_ptr->set_parameters(params);
+
+  unsigned N = (GP_ptr->points_for_interpolation).size();
+  gsl_vector* y = GP_ptr->y;
+  gsl_vector* mu = GP_ptr->mean;
+  gsl_matrix* C = GP_ptr->C;
+
+  // std::cout << "y = ";
+  // for (unsigned i=0; i<y->size; ++i) {
+  //   std::cout << "(" << i << "," << gsl_vector_get(y,i) << ") ";
+  //   // if (std::abs(std::isinf(gsl_vector_get(y,i)))) {
+  //   //   gsl_vector_set(y,i,-1000.0);
+  //   // }
+  // }
+  // std::cout << std::endl;
+  
+  MultivariateNormal mvtnorm = MultivariateNormal();
+  double out = mvtnorm.log_dmvnorm(N,y,mu,C);
+  // if (std::isnan(log(out))) {
+  //   out = std::numeric_limits<double>::epsilon();
+  // }
+
+  std::cout << "ll = " << out << std::endl;
   return out;
 }

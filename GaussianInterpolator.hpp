@@ -401,3 +401,7 @@ struct GaussianInterpolator {
   double prediction_variance(const likelihood_point& x);
 
 };
+
+double optimization_wrapper(const std::vector<double> &x,
+			    std::vector<double> &grad,
+			    void * data);
