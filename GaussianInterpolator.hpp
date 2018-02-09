@@ -1,4 +1,4 @@
-#include "2DBrownianMotionPath.hpp"
+#include "src/brownian-motion/2DBrownianMotionPath.hpp"
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -14,11 +14,19 @@
 #include <iostream>
 #include <sstream>
 #include <limits>
-#include "nlopt.hpp"
+#include "src/nlopt/api/nlopt.hpp"
 #include <omp.h>
 #include <stdio.h>
 #include <string.h>
 #include <vector>
+
+double logit(double p) {
+  return log(p/(1.0-p));
+}
+
+double logit_inv(double r) {
+  return exp(r)/(1 + exp(r));
+}
 
 struct parameters_nominal {
   double sigma_2;
@@ -92,12 +100,59 @@ struct parameters_nominal {
     unsigned counter = 0;
     for (unsigned i=0; i<7; ++i) {
       for (unsigned j=0; j<=i; ++j) {
-	os << current_parameters.lower_triag_mat_as_vec[counter] << " ";
+	if (j==i) {
+	  os << current_parameters.lower_triag_mat_as_vec[counter] << ";\n";
+	} else {
+	  os << current_parameters.lower_triag_mat_as_vec[counter] << ",";
+	}
 	counter = counter + 1;
       }
-      os << std::endl;
     }
     return os;
+  }
+
+  friend std::istream& operator>>(std::istream& is,
+				  parameters_nominal& target_parameters)
+  {
+    std::string name;
+    std::string value;
+    // sigma_2
+    std::getline(is, name, '=');
+    std::getline(is, value, ';');
+    target_parameters.sigma_2 = std::stod(value);
+
+    // phi
+    std::getline(is, name, '=');
+    std::getline(is, value, ';');
+    target_parameters.phi = std::stod(value);
+
+    // nu
+    std::getline(is, name, '=');
+    std::getline(is, value, ';');
+    target_parameters.nu = std::stod(value);
+
+    // tau_2
+    std::getline(is, name, '=');
+    std::getline(is, value, ';');
+    target_parameters.tau_2 = std::stod(value);
+
+    // L
+    unsigned counter = 0;
+    for (unsigned i=0; i<7; ++i) {
+      for (unsigned j=0; j<=i; ++j) {
+
+	if (j==i) {
+	  std::getline(is, value, ';');
+	  target_parameters.lower_triag_mat_as_vec[counter] = std::stod(value);
+	} else {
+	  std::getline(is, value, ',');
+	  target_parameters.lower_triag_mat_as_vec[counter] = std::stod(value);
+	}
+	counter = counter + 1;
+      }
+    }
+
+    return is;
   }
 
   std::vector<double> as_vector() const
@@ -133,6 +188,26 @@ struct parameters_nominal {
     
 };
 
+struct likelihood_point_transformed {
+  double x_0_tilde_transformed;
+  double y_0_tilde_transformed;
+  //
+  double x_t_tilde_transformed;
+  double y_t_tilde_transformed;
+  //
+  double sigma_y_tilde_transformed;
+  double t_tilde_transformed;
+  double rho_transformed;
+  //
+  double log_likelihood_transformed;
+  //
+  //
+  likelihood_point_transformed(const likelihood_point& lp);
+  likelihood_point_transformed();
+
+  void set_likelihood_point_transformed(const likelihood_point& lp);
+}
+
 struct likelihood_point {
   double x_0_tilde;
   double y_0_tilde;
@@ -144,7 +219,7 @@ struct likelihood_point {
   double t_tilde;
   double rho;
   //
-  double likelihood;
+  double log_likelihood;
 
   likelihood_point()
     : x_0_tilde(0.5),
@@ -154,7 +229,7 @@ struct likelihood_point {
       sigma_y_tilde(1.0),
       t_tilde(1.0),
       rho(0.0),
-      likelihood(1.0)
+      log_likelihood(1.0)
   {}
 
   likelihood_point(double x_0_tilde_in,
@@ -164,7 +239,7 @@ struct likelihood_point {
 		   double sigma_y_tilde_in,
 		   double t_tilde_in,
 		   double rho_in,
-		   double likelihood_in)
+		   double log_likelihood_in)
     : x_0_tilde(x_0_tilde_in),
       y_0_tilde(y_0_tilde_in),
       x_t_tilde(x_t_tilde_in),
@@ -172,7 +247,7 @@ struct likelihood_point {
       sigma_y_tilde(sigma_y_tilde_in),
       t_tilde(t_tilde_in),
       rho(rho_in),
-      likelihood(likelihood_in)
+      log_likelihood(log_likelihood_in)
   {}
 
   likelihood_point& operator=(const likelihood_point& rhs)
@@ -190,7 +265,7 @@ struct likelihood_point {
       t_tilde = rhs.t_tilde;
       rho = rhs.rho;
       //
-      likelihood = rhs.likelihood;
+      log_likelihood = rhs.log_likelihood;
 
       return *this;
     }
@@ -231,7 +306,7 @@ struct likelihood_point {
     }
 
     rho = BM.get_rho();
-    likelihood = 0.0;
+    log_likelihood = 1.0;
     
     return *this;
   }
@@ -249,14 +324,14 @@ struct likelihood_point {
     os << "t_tilde=" << point.t_tilde << ";\n";
     os << "rho=" << point.rho << ";\n";
     //
-    os << "likelihood=" << point.likelihood << ";\n";
+    os << "log_likelihood=" << point.log_likelihood << ";\n";
 
     return os;
   }
 
   void print_point()
   {
-    printf("x_0_tilde=%f \ny_0_tilde=%f \nx_t_tilde=%f \ny_t_tilde=%f \nsigma_y_tilde=%f \nt_tilde=%f \nrho=%f \nlikelihood=%f \n",
+    printf("x_0_tilde=%f \ny_0_tilde=%f \nx_t_tilde=%f \ny_t_tilde=%f \nsigma_y_tilde=%f \nt_tilde=%f \nrho=%f \nlog_likelihood=%f \n",
   	   x_0_tilde,
   	   y_0_tilde,
   	   x_t_tilde,
@@ -264,7 +339,7 @@ struct likelihood_point {
   	   sigma_y_tilde,
   	   t_tilde,
   	   rho,
-  	   likelihood);
+  	   log_likelihood);
   }
 
   friend std::istream& operator>>(std::istream& is,
@@ -307,10 +382,10 @@ struct likelihood_point {
     std::getline(is, value, ';');
     point.rho = std::stod(value);
 
-    // likelihood
+    // log_likelihood
     std::getline(is, name, '=');
     std::getline(is, value, ';');
-    point.likelihood = std::stod(value);
+    point.log_likelihood = std::stod(value);
 
     return is;
   }
@@ -399,7 +474,10 @@ struct GaussianInterpolator {
 
   double operator()(const likelihood_point& x);
   double prediction_variance(const likelihood_point& x);
-
+  static double optimization_wrapper(const std::vector<double> &x,
+				     std::vector<double> &grad,
+				     void * data);
+  void optimize_parameters();
 };
 
 double optimization_wrapper(const std::vector<double> &x,
