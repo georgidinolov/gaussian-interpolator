@@ -20,13 +20,8 @@
 #include <string.h>
 #include <vector>
 
-double logit(double p) {
-  return log(p/(1.0-p));
-}
-
-double logit_inv(double r) {
-  return exp(r)/(1 + exp(r));
-}
+double gp_logit(double p);
+double gp_logit_inv(double r);
 
 struct parameters_nominal {
   double sigma_2;
@@ -188,25 +183,6 @@ struct parameters_nominal {
     
 };
 
-struct likelihood_point_transformed {
-  double x_0_tilde_transformed;
-  double y_0_tilde_transformed;
-  //
-  double x_t_tilde_transformed;
-  double y_t_tilde_transformed;
-  //
-  double sigma_y_tilde_transformed;
-  double t_tilde_transformed;
-  double rho_transformed;
-  //
-  double log_likelihood_transformed;
-  //
-  //
-  likelihood_point_transformed(const likelihood_point& lp);
-  likelihood_point_transformed();
-
-  void set_likelihood_point_transformed(const likelihood_point& lp);
-}
 
 struct likelihood_point {
   double x_0_tilde;
@@ -405,6 +381,27 @@ struct likelihood_point {
 
     return out;
   }
+};
+
+struct likelihood_point_transformed {
+  double x_0_tilde_transformed;
+  double y_0_tilde_transformed;
+  //
+  double x_t_tilde_transformed;
+  double y_t_tilde_transformed;
+  //
+  double sigma_y_tilde_transformed;
+  double t_tilde_transformed;
+  double rho_transformed;
+  //
+  double log_likelihood_transformed;
+  //
+  //
+  void set_likelihood_point_transformed(const likelihood_point& lp);
+  likelihood_point_transformed(const likelihood_point& lp);
+  likelihood_point_transformed();
+  //
+  gsl_vector* as_gsl_vector() const;
 };
 
 double likelihood_point_distance(const likelihood_point& lp1,

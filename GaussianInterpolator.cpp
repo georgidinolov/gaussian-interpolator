@@ -1,7 +1,13 @@
 #include "GaussianInterpolator.hpp"
 #include "src/multivariate-normal/MultivariateNormal.hpp"
 
+double gp_logit(double p) {
+  return log(p/(1.0-p));
+}
 
+double gp_logit_inv(double r) {
+  return exp(r)/(1 + exp(r));
+}
 
 likelihood_point_transformed::likelihood_point_transformed(const likelihood_point& lp)
 {
@@ -16,15 +22,15 @@ likelihood_point_transformed::likelihood_point_transformed()
 
 void likelihood_point_transformed::set_likelihood_point_transformed(const likelihood_point& lp)
 {
-  x_0_tilde_transformed = logit(lp.x_0_tilde);
-  x_t_tilde_transformed = logit(lp.x_t_tilde);
+  x_0_tilde_transformed = gp_logit(lp.x_0_tilde);
+  x_t_tilde_transformed = gp_logit(lp.x_t_tilde);
   // 
-  y_0_tilde_transformed = logit(lp.y_0_tilde);
-  y_t_tilde_transformed = logit(lp.y_t_tilde);
+  y_0_tilde_transformed = gp_logit(lp.y_0_tilde);
+  y_t_tilde_transformed = gp_logit(lp.y_t_tilde);
   //
   sigma_y_tilde_transformed = log(lp.sigma_y_tilde);
   t_tilde_transformed = log(lp.t_tilde);
-  rho_transformed = logit( (lp.rho + 1.0)/2.0 );
+  rho_transformed = gp_logit( (lp.rho + 1.0)/2.0 );
   //
   log_likelihood_transformed = lp.log_likelihood + 
     (log(lp.x_0_tilde) + log(1.0-lp.x_0_tilde)) +
@@ -38,12 +44,28 @@ void likelihood_point_transformed::set_likelihood_point_transformed(const likeli
     (log(2.0) + log(lp.rho) + log(1.0-lp.rho));
 }
 
+gsl_vector* likelihood_point_transformed::as_gsl_vector() const
+  {
+    gsl_vector* out = gsl_vector_alloc(7);
+    gsl_vector_set(out, 0, x_0_tilde_transformed);
+    gsl_vector_set(out, 1, y_0_tilde_transformed);
+    //
+    gsl_vector_set(out, 2, x_t_tilde_transformed);
+    gsl_vector_set(out, 3, y_t_tilde_transformed);
+    //
+    gsl_vector_set(out, 4, sigma_y_tilde_transformed);
+    gsl_vector_set(out, 5, t_tilde_transformed);
+    gsl_vector_set(out, 6, rho_transformed);
+
+    return out;
+  }
+
 double GaussianInterpolator::likelihood_point_distance(const likelihood_point& lp1,
 						       const likelihood_point& lp2,
 						       const parameters_nominal& params) const
 {
-  gsl_vector* lp1_vec = lp1.as_gsl_vector();
-  gsl_vector* lp2_vec = lp2.as_gsl_vector();
+  gsl_vector* lp1_vec = (likelihood_point_transformed(lp1)).as_gsl_vector();
+  gsl_vector* lp2_vec = (likelihood_point_transformed(lp2)).as_gsl_vector();
   gsl_vector_sub(lp1_vec, lp2_vec);
 
   gsl_matrix* L = params.lower_triag_matrix();
@@ -87,8 +109,13 @@ double GaussianInterpolator::covariance(const likelihood_point& lp1, //
 	   (std::pow(2, params.nu-1) * gsl_sf_gamma(params.nu))) *
       bessel_out.val;
   }
-
   gsl_set_error_handler(old_handler);
+
+  if (std::isnan(out)) {
+    std::cout << "lp1 = " << lp1;
+    std::cout << "lp2 = " << lp2;    
+    abort();
+  }
 
   return out;
 };
