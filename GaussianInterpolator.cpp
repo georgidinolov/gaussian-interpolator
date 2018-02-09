@@ -168,7 +168,8 @@ GaussianInterpolator::GaussianInterpolator()
   c = gsl_vector_alloc(points_for_interpolation.size());
 
   for (unsigned i=0; i<points_for_interpolation.size(); ++i) {
-    gsl_vector_set(y, i, points_for_interpolation[i].log_likelihood);
+    likelihood_point_transformed lpt = likelihood_point_transformed(points_for_interpolation[i]);
+    gsl_vector_set(y, i, lpt.log_likelihood_transformed);
     gsl_vector_set(mean, i, parameters.phi);
   }
 
@@ -203,7 +204,8 @@ GaussianInterpolator::GaussianInterpolator(const std::vector<likelihood_point>& 
   difference = gsl_vector_alloc(points_for_interpolation.size());
     
   for (unsigned i=0; i<points_for_interpolation.size(); ++i) {
-    gsl_vector_set(y, i, points_for_interpolation[i].log_likelihood);
+    likelihood_point_transformed lpt = likelihood_point_transformed(points_for_interpolation[i]);
+    gsl_vector_set(y, i, lpt.log_likelihood_transformed);
     gsl_vector_set(mean, i, parameters.phi);
   }
 
