@@ -9,6 +9,30 @@ double gp_logit_inv(double r) {
   return exp(r)/(1 + exp(r));
 }
 
+likelihood_point& likelihood_point::operator=(const likelihood_point_transformed& rhs)
+{
+  x_0_tilde = gp_logit_inv(rhs.x_0_tilde_transformed);
+  y_0_tilde = gp_logit_inv(rhs.y_0_tilde_transformed);
+  //
+  x_t_tilde = gp_logit_inv(rhs.x_t_tilde_transformed);
+  y_t_tilde = gp_logit_inv(rhs.y_t_tilde_transformed);
+  //
+  sigma_y_tilde = exp(rhs.sigma_y_tilde_transformed);
+  t_tilde = exp(rhs.t_tilde_transformed);
+  rho = 2.0*gp_logit_inv(rhs.rho_transformed) - 1.0;
+  //
+  log_likelihood = rhs.log_likelihood_transformed +
+    -log(x_0_tilde) - log(1-x_0_tilde) +
+    -log(y_0_tilde) - log(1-y_0_tilde) +
+    -log(x_t_tilde) - log(1-x_t_tilde) +
+    -log(y_t_tilde) - log(1-y_t_tilde) +
+    -log(sigma_y_tilde) +
+    -log(t_tilde) +
+    +log(2.0) - log(1-std::pow(rho,2));
+  
+  return *this;
+}
+
 likelihood_point_transformed::likelihood_point_transformed(const likelihood_point& lp)
 {
   set_likelihood_point_transformed(lp);
@@ -24,7 +48,7 @@ void likelihood_point_transformed::set_likelihood_point_transformed(const likeli
 {
   x_0_tilde_transformed = gp_logit(lp.x_0_tilde);
   x_t_tilde_transformed = gp_logit(lp.x_t_tilde);
-  // 
+  //
   y_0_tilde_transformed = gp_logit(lp.y_0_tilde);
   y_t_tilde_transformed = gp_logit(lp.y_t_tilde);
   //
@@ -32,7 +56,7 @@ void likelihood_point_transformed::set_likelihood_point_transformed(const likeli
   t_tilde_transformed = log(lp.t_tilde);
   rho_transformed = gp_logit( (lp.rho + 1.0)/2.0 );
   //
-  log_likelihood_transformed = lp.log_likelihood + 
+  log_likelihood_transformed = lp.log_likelihood +
     (log(lp.x_0_tilde) + log(1.0-lp.x_0_tilde)) +
     (log(lp.y_0_tilde) + log(1.0-lp.y_0_tilde)) +
     (log(lp.x_t_tilde) + log(1.0-lp.x_t_tilde)) +
@@ -41,7 +65,7 @@ void likelihood_point_transformed::set_likelihood_point_transformed(const likeli
     log(lp.sigma_y_tilde) +
     log(lp.t_tilde) +
     //
-    (log(2.0) + log(lp.rho) + log(1.0-lp.rho));
+    log(lp.rho+1.0) + log((1.0-lp.rho)/2.0);
 }
 
 gsl_vector* likelihood_point_transformed::as_gsl_vector() const
@@ -60,17 +84,45 @@ gsl_vector* likelihood_point_transformed::as_gsl_vector() const
     return out;
   }
 
-double GaussianInterpolator::likelihood_point_distance(const likelihood_point& lp1,
-						       const likelihood_point& lp2,
+std::ostream& operator<<(std::ostream& os,
+			 const likelihood_point_transformed& point)
+  {
+    os << "x_0_tilde=" << std::scientific << std::setprecision(14)
+       << point.x_0_tilde_transformed << ";\n";
+    os << "y_0_tilde=" << std::scientific << std::setprecision(14)
+       << point.y_0_tilde_transformed << ";\n";
+    //
+    os << "x_t_tilde=" << std::scientific << std::setprecision(14)
+       << point.x_t_tilde_transformed << ";\n";
+    os << "y_t_tilde=" << std::scientific << std::setprecision(14)
+       << point.y_t_tilde_transformed << ";\n";
+    //
+    os << "sigma_y_tilde=" << std::scientific << std::setprecision(14)
+       << point.sigma_y_tilde_transformed << ";\n";
+    os << "t_tilde=" << std::scientific << std::setprecision(14)
+       << point.t_tilde_transformed << ";\n";
+    os << "rho=" << std::scientific << std::setprecision(14)
+       << point.rho_transformed << ";\n";
+    //
+    os << "log_likelihood=" << std::scientific << std::setprecision(14)
+       << point.log_likelihood_transformed << ";\n";
+    os << "FLIPPED=" << std::scientific << std::setprecision(14)
+       << point.FLIPPED << ";\n";
+
+    return os;
+  }
+
+double GaussianInterpolator::likelihood_point_distance(const likelihood_point_transformed& lp1,
+						       const likelihood_point_transformed& lp2,
 						       const parameters_nominal& params) const
 {
-  gsl_vector* lp1_vec = (likelihood_point_transformed(lp1)).as_gsl_vector();
-  gsl_vector* lp2_vec = (likelihood_point_transformed(lp2)).as_gsl_vector();
+  gsl_vector* lp1_vec = lp1.as_gsl_vector();
+  gsl_vector* lp2_vec = lp2.as_gsl_vector();
   gsl_vector_sub(lp1_vec, lp2_vec);
 
   gsl_matrix* L = params.lower_triag_matrix();
   gsl_blas_dtrmv(CblasLower, CblasTrans, CblasNonUnit, L, lp1_vec);
-    
+
   gsl_vector* squared_scaled_diff = gsl_vector_alloc(7);
   gsl_vector_memcpy(squared_scaled_diff, lp1_vec);
   gsl_vector_mul(squared_scaled_diff, lp1_vec);
@@ -82,7 +134,7 @@ double GaussianInterpolator::likelihood_point_distance(const likelihood_point& l
   }
 
   out = std::sqrt(out);
-  
+
   gsl_vector_free(lp1_vec);
   gsl_vector_free(lp2_vec);
   gsl_matrix_free(L);
@@ -90,13 +142,13 @@ double GaussianInterpolator::likelihood_point_distance(const likelihood_point& l
   return out;
 };
 
-double GaussianInterpolator::covariance(const likelihood_point& lp1, // 
-					const likelihood_point& lp2,
+double GaussianInterpolator::covariance(const likelihood_point_transformed& lp1, //
+					const likelihood_point_transformed& lp2,
 					const parameters_nominal& params) const
 {
 
   gsl_error_handler_t* old_handler = gsl_set_error_handler_off();
-  
+
   gsl_sf_result bessel_out;
   double dist = likelihood_point_distance(lp1,lp2,params);
   int status = gsl_sf_bessel_Kn_e(params.nu, dist, &bessel_out);
@@ -111,16 +163,16 @@ double GaussianInterpolator::covariance(const likelihood_point& lp1, //
   }
   gsl_set_error_handler(old_handler);
 
-  if (std::isnan(out)) {
-    std::cout << "lp1 = " << lp1;
-    std::cout << "lp2 = " << lp2;    
-    abort();
-  }
+  // if (std::isnan(out)) {
+  //   std::cout << "lp1 = " << lp1;
+  //   std::cout << "lp2 = " << lp2;
+  //   abort();
+  // }
 
   return out;
 };
 
-gsl_matrix* GaussianInterpolator::covariance_matrix(const std::vector<likelihood_point>& lps,
+gsl_matrix* GaussianInterpolator::covariance_matrix(const std::vector<likelihood_point_transformed>& lps,
 						    const parameters_nominal& params) const
 {
   unsigned dimension = lps.size();
@@ -144,8 +196,8 @@ gsl_matrix* GaussianInterpolator::covariance_matrix(const std::vector<likelihood
 };
 
 GaussianInterpolator::GaussianInterpolator()
-  : points_for_integration(std::vector<likelihood_point> (1)),
-    points_for_interpolation(std::vector<likelihood_point> (1)),
+  : points_for_integration(std::vector<likelihood_point_transformed> (1)),
+    points_for_interpolation(std::vector<likelihood_point_transformed> (1)),
     parameters(parameters_nominal()),
     C(NULL),
     Cinv(NULL),
@@ -154,6 +206,7 @@ GaussianInterpolator::GaussianInterpolator()
     difference(NULL),
     c(NULL)
 {
+  printf("in GaussianInterpolator::default ctor\n");
   C = covariance_matrix(points_for_interpolation,
 			parameters);
   Cinv = gsl_matrix_alloc(points_for_interpolation.size(),
@@ -168,7 +221,7 @@ GaussianInterpolator::GaussianInterpolator()
   c = gsl_vector_alloc(points_for_interpolation.size());
 
   for (unsigned i=0; i<points_for_interpolation.size(); ++i) {
-    likelihood_point_transformed lpt = likelihood_point_transformed(points_for_interpolation[i]);
+    likelihood_point_transformed lpt = points_for_interpolation[i];
     gsl_vector_set(y, i, lpt.log_likelihood_transformed);
     gsl_vector_set(mean, i, parameters.phi);
   }
@@ -177,11 +230,12 @@ GaussianInterpolator::GaussianInterpolator()
   gsl_vector_sub(difference, mean);
 }
 
-GaussianInterpolator::GaussianInterpolator(const std::vector<likelihood_point>& points_for_integration_in,
-					   const std::vector<likelihood_point>& points_for_interpolation_in,
-					   const parameters_nominal& params)
-  : points_for_integration(points_for_integration_in),
-    points_for_interpolation(points_for_interpolation_in),
+GaussianInterpolator::
+GaussianInterpolator(const std::vector<likelihood_point>& points_for_integration_in,
+		     const std::vector<likelihood_point>& points_for_interpolation_in,
+		     const parameters_nominal& params)
+  : points_for_integration(),
+    points_for_interpolation(),
     parameters(params),
     C(NULL),
     Cinv(NULL),
@@ -190,10 +244,32 @@ GaussianInterpolator::GaussianInterpolator(const std::vector<likelihood_point>& 
     difference(NULL),
     c(NULL)
 {
+  printf("in GaussianInterpolator::ctor\n");
+  points_for_integration = std::vector<likelihood_point_transformed> (0);
+  //
+  for (likelihood_point current_lp : points_for_integration_in) {
+    points_for_integration.push_back(likelihood_point_transformed(current_lp));
+  }
+
+  points_for_interpolation = std::vector<likelihood_point_transformed> (0);
+  for (likelihood_point current_lp : points_for_interpolation_in) {
+    if ( !std::isnan(std::abs(current_lp.log_likelihood)) &&
+	 !std::isinf(std::abs(current_lp.log_likelihood)) &&
+	 (current_lp.log_likelihood < 3.0) &&
+	 (current_lp.log_likelihood > -9.0) &&
+ 	 (current_lp.sigma_y_tilde >= 0.40) &&
+ 	 (current_lp.t_tilde >= 0.30) &&
+ 	 (std::abs(current_lp.rho) <= 0.95))
+  	{
+	  likelihood_point_transformed current_lp_tr(current_lp);
+  	  points_for_interpolation.push_back(current_lp_tr);
+  	}
+  }
+
   C = covariance_matrix(points_for_interpolation,
 			parameters);
   Cinv = gsl_matrix_alloc(points_for_interpolation.size(),
-			  points_for_interpolation.size());
+  			  points_for_interpolation.size());
   gsl_matrix_memcpy(Cinv, C);
   gsl_linalg_cholesky_decomp(Cinv);
   gsl_linalg_cholesky_invert(Cinv);
@@ -202,9 +278,9 @@ GaussianInterpolator::GaussianInterpolator(const std::vector<likelihood_point>& 
   mean = gsl_vector_alloc(points_for_interpolation.size());
   c = gsl_vector_alloc(points_for_interpolation.size());
   difference = gsl_vector_alloc(points_for_interpolation.size());
-    
+
   for (unsigned i=0; i<points_for_interpolation.size(); ++i) {
-    likelihood_point_transformed lpt = likelihood_point_transformed(points_for_interpolation[i]);
+    likelihood_point_transformed lpt = points_for_interpolation[i];
     gsl_vector_set(y, i, lpt.log_likelihood_transformed);
     gsl_vector_set(mean, i, parameters.phi);
   }
@@ -214,15 +290,43 @@ GaussianInterpolator::GaussianInterpolator(const std::vector<likelihood_point>& 
 }
 
 GaussianInterpolator::GaussianInterpolator(const GaussianInterpolator& rhs)
+  : C(NULL),
+    Cinv(NULL),
+    y(NULL),
+    mean(NULL),
+    difference(NULL),
+    c(NULL)
 {
   points_for_integration = rhs.points_for_integration;
   points_for_interpolation = rhs.points_for_interpolation;
   parameters = parameters;
-  set_linalg_members();
+
+  C = covariance_matrix(points_for_interpolation,
+			parameters);
+  Cinv = gsl_matrix_alloc(points_for_interpolation.size(),
+  			  points_for_interpolation.size());
+  gsl_matrix_memcpy(Cinv, C);
+  gsl_linalg_cholesky_decomp(Cinv);
+  gsl_linalg_cholesky_invert(Cinv);
+
+  y = gsl_vector_alloc(points_for_interpolation.size());
+  mean = gsl_vector_alloc(points_for_interpolation.size());
+  c = gsl_vector_alloc(points_for_interpolation.size());
+  difference = gsl_vector_alloc(points_for_interpolation.size());
+
+  for (unsigned i=0; i<points_for_interpolation.size(); ++i) {
+    likelihood_point_transformed lpt = points_for_interpolation[i];
+    gsl_vector_set(y, i, lpt.log_likelihood_transformed);
+    gsl_vector_set(mean, i, parameters.phi);
+  }
+
+  gsl_vector_memcpy(difference, y);
+  gsl_vector_sub(difference, mean);
 }
 
 GaussianInterpolator& GaussianInterpolator::operator=(const GaussianInterpolator& rhs)
 {
+  printf("in GaussianInterpolator::operator=\n");
     if (this==&rhs) {
       return *this;
     } else {
@@ -255,7 +359,7 @@ void GaussianInterpolator::set_linalg_members()
   //   }
   //   std::cout << std::endl;
   // }
-    
+
   gsl_matrix_memcpy(Cinv, C);
   gsl_linalg_cholesky_decomp(Cinv);
   gsl_linalg_cholesky_invert(Cinv);
@@ -266,24 +370,26 @@ void GaussianInterpolator::set_linalg_members()
   difference = gsl_vector_alloc(points_for_interpolation.size());
 
   for (unsigned i=0; i<points_for_interpolation.size(); ++i) {
-    gsl_vector_set(y, i, points_for_interpolation[i].log_likelihood);
+    gsl_vector_set(y, i, points_for_interpolation[i].log_likelihood_transformed);
     gsl_vector_set(mean, i, parameters.phi);
     gsl_vector_set(difference, i,
-		   points_for_interpolation[i].log_likelihood-parameters.phi);
+		   points_for_interpolation[i].log_likelihood_transformed-parameters.phi);
   }
 }
 
 double GaussianInterpolator::operator()(const likelihood_point& x)
 {
+  likelihood_point_transformed y(x);
+
   double out = 0;
   double work [points_for_interpolation.size()];
   gsl_vector_view work_view = gsl_vector_view_array(work,
 						    points_for_interpolation.size());
-    
-    
+
+
   for (unsigned i=0; i<points_for_interpolation.size(); ++i) {
     gsl_vector_set(c, i, covariance(points_for_interpolation[i],
-				    x,
+				    y,
 				    parameters));
   }
 
@@ -294,25 +400,33 @@ double GaussianInterpolator::operator()(const likelihood_point& x)
 		 c, // x
 		 0.0, // beta = 0
 		 &work_view.vector); // this is the output
-    
+
   gsl_blas_ddot(&work_view.vector, difference, &out);
 
-  out = out + parameters.phi;
+  out = out + parameters.phi +
+    -log(x.x_0_tilde) - log(1-x.x_0_tilde) +
+    -log(x.y_0_tilde) - log(1-x.y_0_tilde) +
+    -log(x.x_t_tilde) - log(1-x.x_t_tilde) +
+    -log(x.y_t_tilde) - log(1-x.y_t_tilde) +
+    -log(x.sigma_y_tilde) +
+    -log(x.t_tilde) +
+    +log(2.0) - log(1-std::pow(x.rho,2));
 
   return out;
 }
 
-double GaussianInterpolator::prediction_variance(const likelihood_point& x)
+double GaussianInterpolator::prediction_standard_dev(const likelihood_point& x)
 {
+  likelihood_point_transformed y(x);
   double out = 0;
   double work [points_for_interpolation.size()];
   gsl_vector_view work_view = gsl_vector_view_array(work,
 						    points_for_interpolation.size());
-    
-    
+
+
   for (unsigned i=0; i<points_for_interpolation.size(); ++i) {
     gsl_vector_set(c, i, covariance(points_for_interpolation[i],
-				    x,
+				    y,
 				    parameters));
   }
 
@@ -325,10 +439,10 @@ double GaussianInterpolator::prediction_variance(const likelihood_point& x)
 		 0.0, // beta = 0
 		 &work_view.vector); // this is the output
 
-    
   gsl_blas_ddot(&work_view.vector, c, &out);
 
-  out = parameters.tau_2 - out;
+  out = std::sqrt(parameters.tau_2 - out);
+
   return out;
 }
 
@@ -339,28 +453,32 @@ double GaussianInterpolator::optimization_wrapper(const std::vector<double> &x,
   GaussianInterpolator * GP_ptr=
     reinterpret_cast<GaussianInterpolator*>(data);
 
+  parameters_nominal params = //parameters_nominal(x);
+    GP_ptr->parameters;
 
-  parameters_nominal params = parameters_nominal(x);
-
-  // double sigma_2 = x[0];
-  // double phi = x[1];
-  // int nu = x[2];
-  // double tau_2 = x[3];
-  // std::vector<double> lower_triag_mat_as_vec = 
-  //   std::vector<double> {x[4], //0
-  // 			 0.0, x[5], //2
-  // 			 0.0, 0.0, x[6], //5
-  // 			 0.0, 0.0, 0.0, x[7], //9
-  // 			 0.0, 0.0, 0.0, 0.0, x[8], //14
-  // 			 0.0, 0.0, 0.0, 0.0, 0.0, x[9], //20
-  // 			 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, x[10]}; //27
-  
-  // parameters_nominal params = parameters_nominal();
-  // params.sigma_2 = sigma_2;
-  // params.phi = phi;
-  // params.nu = nu;
-  // params.tau_2 = tau_2;
-  // params.lower_triag_mat_as_vec = lower_triag_mat_as_vec;
+  params.phi = x[0];
+  params.nu = x[1];
+  params.tau_2 = x[2];
+  unsigned counter_mat_as_vec=0;
+  unsigned counter_param=0;
+  std::vector<double> lower_triag_mat_as_vec = params.lower_triag_mat_as_vec;
+  for (unsigned i=0; i<7; ++i) {
+    for (unsigned j=0; j<=i; ++j) {
+      if ((i>=4) && (j==i)) {
+	lower_triag_mat_as_vec[counter_mat_as_vec] = x[3 + counter_param];
+	counter_param = counter_param + 1;
+      }
+      // if ((i<=3) & (j==i)) {
+      // 	lower_triag_mat_as_vec[counter_mat_as_vec] = x[3 + counter_param];
+      // 	counter_param = counter_param + 1;
+      // } else if ((i>3) & (j==i)) {
+      // 	lower_triag_mat_as_vec[counter_mat_as_vec] = x[3 + counter_param];
+      // 	counter_param = counter_param + 1;
+      // }
+      counter_mat_as_vec = counter_mat_as_vec + 1;
+    }
+  }
+  params.lower_triag_mat_as_vec = lower_triag_mat_as_vec;
 
   std::cout << params;
   GP_ptr->set_parameters(params);
@@ -378,7 +496,7 @@ double GaussianInterpolator::optimization_wrapper(const std::vector<double> &x,
   //   // }
   // }
   // std::cout << std::endl;
-  
+
   MultivariateNormal mvtnorm = MultivariateNormal();
   double out = mvtnorm.log_dmvnorm(N,y,mu,C);
   // if (std::isnan(log(out))) {
@@ -391,24 +509,24 @@ double GaussianInterpolator::optimization_wrapper(const std::vector<double> &x,
 
 void GaussianInterpolator::optimize_parameters()
 {
-  nlopt::opt opt(nlopt::LN_NELDERMEAD, 32);
-  std::vector<double> lb = {0.00001, -HUGE_VAL, 5, 0.0001,
-  			    0.00001, // diag element 1 min
-  			    -HUGE_VAL, 0.00001,
-  			    -HUGE_VAL, -HUGE_VAL, 0.00001,
-  			    -HUGE_VAL, -HUGE_VAL, -HUGE_VAL, 0.00001,
-			    -HUGE_VAL, -HUGE_VAL, -HUGE_VAL, -HUGE_VAL, 0.00001,
-  			    -HUGE_VAL, -HUGE_VAL, -HUGE_VAL, -HUGE_VAL, -HUGE_VAL, 0.00001,
-  			     -HUGE_VAL, -HUGE_VAL, -HUGE_VAL, -HUGE_VAL, -HUGE_VAL, -HUGE_VAL, 0.00001};
-  
-  std::vector<double> ub = {HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL,
-  			    HUGE_VAL, // diag element 1 min
-  			    HUGE_VAL, HUGE_VAL,
-  			    HUGE_VAL, HUGE_VAL, HUGE_VAL,
-  			    HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL,
-			    HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL,
-  			    HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL,
-  			     HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL};
+  nlopt::opt opt(nlopt::LN_NELDERMEAD, 6);
+  std::vector<double> lb = {/*0.00001,*/ -HUGE_VAL, 5, 0.0001,
+  			    /* 0.00001, // diag element 1 min*/
+  			    /*-HUGE_VAL, 0.00001,*/
+  			    /*-HUGE_VAL, -HUGE_VAL, 0.00001,*/
+  			    /*-HUGE_VAL, -HUGE_VAL, -HUGE_VAL, 0.00001,*/
+			    /*-HUGE_VAL, -HUGE_VAL, -HUGE_VAL, -HUGE_VAL,*/ 0.00001,
+  			    /*-HUGE_VAL, -HUGE_VAL, -HUGE_VAL, -HUGE_VAL, -HUGE_VAL,*/ 0.00001,
+			    /*-HUGE_VAL, -HUGE_VAL, -HUGE_VAL, -HUGE_VAL, -HUGE_VAL, -HUGE_VAL,*/ 0.00001};
+
+  std::vector<double> ub = {/*HUGE_VAL,*/ HUGE_VAL, HUGE_VAL, HUGE_VAL,
+  			    /* HUGE_VAL,*/ // diag element 1 min
+  			    /*HUGE_VAL, HUGE_VAL,*/
+  			    /*HUGE_VAL, HUGE_VAL, HUGE_VAL,*/
+  			    /*HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL,*/
+			    /*HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL,*/ HUGE_VAL,
+  			    /*HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL,*/ HUGE_VAL,
+			    /*HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL, HUGE_VAL,*/ HUGE_VAL};
 
   opt.set_lower_bounds(lb);
   opt.set_upper_bounds(ub);
@@ -418,80 +536,140 @@ void GaussianInterpolator::optimize_parameters()
   opt.set_max_objective(GaussianInterpolator::optimization_wrapper,
   			this);
 
-  std::vector<double> optimal_params = parameters.as_vector();
-  // std::vector<double> optimal_params = std::vector<double> (11);
+  std::vector<double> optimal_params = std::vector<double> (6);
   // optimal_params[0] = parameters.sigma_2;
-  // optimal_params[1] = parameters.phi;
-  // optimal_params[2] = parameters.nu;
-  // optimal_params[3] = parameters.tau_2;
-  // unsigned counter = 0;
-  // for (unsigned i=0; i<7; ++i) {
-  //   for (unsigned j=0; j<=i; ++j) {
-  //     if (i==j) {
-  // 	optimal_params[3+1+i] = parameters.lower_triag_mat_as_vec[counter];
-  //     }
-  //     counter = counter + 1;
-  //   }
-  // }
+  optimal_params[0] = parameters.phi;
+  optimal_params[1] = parameters.nu;
+  optimal_params[2] = parameters.tau_2;
+  unsigned counter_mat_as_vec = 0;
+  unsigned counter_param = 0;
+  for (unsigned i=0; i<7; ++i) {
+    for (unsigned j=0; j<=i; ++j) {
+      if ( (i>=4) && (j==i)) {
+	optimal_params[3+counter_param] = parameters.lower_triag_mat_as_vec[counter_mat_as_vec];
+	counter_param = counter_param + 1;
+      }
+      // if ((i<=3) & (i==j)) {
+      // 	optimal_params[3+counter_param] = parameters.lower_triag_mat_as_vec[counter_mat_as_vec];
+      // 	counter_param = counter_param + 1;
+      // }  else if ((i>3) & (j==i)) {
+      // 	optimal_params[3+counter_param] = parameters.lower_triag_mat_as_vec[counter_mat_as_vec];
+      // 	counter_param = counter_param + 1;
+      // }
+      counter_mat_as_vec = counter_mat_as_vec + 1;
+    }
+  }
+
 
   opt.optimize(optimal_params, maxf);
-  parameters_nominal new_parameters = parameters_nominal(optimal_params);
-  parameters = new_parameters;
-  // parameters.sigma_2 = optimal_params[0];
-  // parameters.phi = optimal_params[1];
-  // parameters.nu = optimal_params[2];
-  // parameters.tau_2 = optimal_params[3];
 
-  // counter = 0;
-  // for (unsigned i=0; i<7; ++i) {
-  //   for (unsigned j=0; j<=i; ++j) {
-  //     if (i==j) {
-  // 	parameters.lower_triag_mat_as_vec[counter] = optimal_params[4+i];
-  //     }
-  //   }
-  // }
+  // parameters_nominal new_parameters = parameters_nominal(optimal_params);
+  // parameters = new_parameters;
 
+  parameters.phi = optimal_params[0];
+  parameters.nu = optimal_params[1];
+  parameters.tau_2 = optimal_params[2];
+
+  counter_mat_as_vec = 0;
+  counter_param = 0;
+  for (unsigned i=0; i<7; ++i) {
+    for (unsigned j=0; j<=i; ++j) {
+      if ((i>=4) && (j==i)) {
+	parameters.lower_triag_mat_as_vec[counter_mat_as_vec] = optimal_params[3+counter_param];
+	counter_param = counter_param + 1;
+      }
+      // if ((i<=3) & (j==i)) {
+      // 	parameters.lower_triag_mat_as_vec[counter_mat_as_vec] = optimal_params[3+counter_param];
+      // 	counter_param = counter_param + 1;
+      // } else if ((i>3) & (j==i)) {
+      // 	parameters.lower_triag_mat_as_vec[counter_mat_as_vec] = optimal_params[3+counter_param];
+      // 	counter_param = counter_param + 1;
+      // }
+      counter_mat_as_vec = counter_mat_as_vec + 1;
+    }
+  }
   set_linalg_members();
 }
 
-double optimization_wrapper(const std::vector<double> &x,
-			    std::vector<double> &grad,
-			    void * data)
+// CHECKER START 
+PointChecker::PointChecker()
+  : mu_mean(NULL),
+    sigma_cov(NULL)
 {
-  GaussianInterpolator * GP_ptr=
-    reinterpret_cast<GaussianInterpolator*>(data);
+  mu_mean = gsl_vector_alloc(2);
+  sigma_cov = gsl_matrix_alloc(2,2);
+}
+
+PointChecker::PointChecker(const PointChecker& rhs)
+  : mu_mean(NULL),
+    sigma_cov(NULL)
+{
+  mu_mean = gsl_vector_alloc(2);
+  sigma_cov = gsl_matrix_alloc(2,2);
+
+  gsl_vector_memcpy(mu_mean, rhs.mu_mean);
+  gsl_vector_memcpy(sigma_cov, rhs.sigma_cov);
+}
+
+PointChecker& PointChecker::operator=(const PointChecker& rhs)
+{
+  if (this==&rhs) {
+    return *this; 
+  } else {
+    gsl_vector_free(mu_mean);
+    gsl_matrix_free(sigma_cov);
+    
+    mu_mean = gls_vector_alloc(rhs.mu_mean->size);
+    sigma_cov = gsl_matrix_alloc(rhs.sigma_cov->size1,
+				 rhs.sigma_cov->size2);
+
+    gsl_vector_memcpy(mu_mean, rhs.mu_mean);
+    gsl_matrix_memcpy(sigma_cov, rhs.sigma_cov);
+  }
+}
+
+PointChecker::PointChecker(const std::vector<likelihood_point_transformed>& lptrs)
+  : mu_mean(NULL),
+    sigma_cov(NULL)
+{
+  mu_mean = gsl_vector_alloc(3);
+  sigma_cov = gsl_matrix_alloc(3,3);
   
-  parameters_nominal params = parameters_nominal(x);
-  //   GP_ptr->parameters;
-  // std::vector<double> params_as_vec = params.as_vector();
-  // for (unsigned i=0; i<x.size(); ++i) {
-  //   params_as_vec[i+1] = x[i];
-  // }
-  // params = parameters_nominal(params_as_vec);
+}
 
-  std::cout << params;
-  GP_ptr->set_parameters(params);
+// GAUSSIAN INTERPOLATOR WITH CHECKER START
+GaussianInterpolatorWithChecker::GaussianInterpolatorWithChecker()
+  : GaussianInterpolator()
+{}
 
-  unsigned N = (GP_ptr->points_for_interpolation).size();
-  gsl_vector* y = GP_ptr->y;
-  gsl_vector* mu = GP_ptr->mean;
-  gsl_matrix* C = GP_ptr->C;
+GaussianInterpolatorWithChecker::
+GaussianInterpolatorWithChecker(const std::vector<likelihood_point>& points_for_integration_in,
+				const std::vector<likelihood_point>& points_for_interpolation_in,
+				const parameters_nominal& params)
+  : GaussianInterpolator(points_for_integration_in,
+			 points_for_interpolation_in,
+			 params)
+{
+  printf("in GaussianInterpolatorWithChecker::ctor\n");
+}
 
-  // std::cout << "y = ";
-  // for (unsigned i=0; i<y->size; ++i) {
-  //   std::cout << "(" << i << "," << gsl_vector_get(y,i) << ") ";
-  //   // if (std::abs(std::isinf(gsl_vector_get(y,i)))) {
-  //   //   gsl_vector_set(y,i,-1000.0);
-  //   // }
-  // }
-  // std::cout << std::endl;
-  
-  MultivariateNormal mvtnorm = MultivariateNormal();
-  double out = mvtnorm.log_dmvnorm(N,y,mu,C);
-  // if (std::isnan(log(out))) {
-  //   out = std::numeric_limits<double>::epsilon();
-  // }
+GaussianInterpolatorWithChecker::
+GaussianInterpolatorWithChecker(const GaussianInterpolatorWithChecker& rhs)
+  : GaussianInterpolator(rhs)
+{}
 
-  std::cout << "ll = " << out << std::endl;
-  return out;
+// GaussianInterpolatorWithChecker::
+// GaussianInterpolatorWithChecker(const GaussianInterpolator& rhs)
+//   : GaussianInterpolator(rhs)
+// {}
+
+GaussianInterpolatorWithChecker& GaussianInterpolatorWithChecker::operator=(const GaussianInterpolatorWithChecker& rhs)
+{
+    if (this==&rhs) {
+      return *this;
+    } else {
+      GaussianInterpolator::operator=(rhs);
+
+      return *this;
+    }
 }

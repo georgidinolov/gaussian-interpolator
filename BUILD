@@ -15,6 +15,23 @@ cc_binary(
 	visibility = ["//visibility:public"],
 )			
 
+cc_binary(
+	name = "test-checker",
+	srcs = ["test-checker.cpp"],
+	includes = ["GaussianInterpolator.hpp"],
+	deps = [":gaussian-interpolator"],
+	copts = ["-Isrc/igraph-0.7.1/include",
+	      	 "-Isrc/brownian-motion",
+		 "-Isrc/gaussian-interpolator",
+		 "-Isrc/nlopt/api",
+	      	 "-Isrc/multivariate-normal",
+		 "-Isrc/images-expansion",
+		 "-O3",
+		 "-fopenmp"],
+	linkopts = ["-lm", "-lgsl", "-lgslcblas", "-fopenmp"],			
+	visibility = ["//visibility:public"],
+)			
+
 cc_library(
 	name = "gaussian-interpolator",
 	srcs = ["GaussianInterpolator.cpp"],

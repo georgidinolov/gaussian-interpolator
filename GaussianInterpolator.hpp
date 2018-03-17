@@ -12,6 +12,7 @@
 #include <gsl/gsl_randist.h>
 #include <gsl/gsl_rng.h>
 #include <iostream>
+#include <iomanip>
 #include <sstream>
 #include <limits>
 #include "src/nlopt/api/nlopt.hpp"
@@ -22,6 +23,8 @@
 
 double gp_logit(double p);
 double gp_logit_inv(double r);
+
+struct likelihood_point_transformed;
 
 struct parameters_nominal {
   double sigma_2;
@@ -86,19 +89,19 @@ struct parameters_nominal {
   friend std::ostream& operator<<(std::ostream& os,
 				  const parameters_nominal& current_parameters)
   {
-    os << "sigma_2=" << current_parameters.sigma_2 << ";\n";
-    os << "phi=" << current_parameters.phi << ";\n";
+    os << "sigma_2=" << std::scientific << std::setprecision(14) << current_parameters.sigma_2 << ";\n";
+    os << "phi=" << std::scientific << std::setprecision(14) << current_parameters.phi << ";\n";
     //
-    os << "nu=" << current_parameters.nu << ";\n";
-    os << "tau_2=" << current_parameters.tau_2 << ";\n";
+    os << "nu=" << std::scientific << std::setprecision(14) << current_parameters.nu << ";\n";
+    os << "tau_2=" << std::scientific << std::setprecision(14) << current_parameters.tau_2 << ";\n";
     //
     unsigned counter = 0;
     for (unsigned i=0; i<7; ++i) {
       for (unsigned j=0; j<=i; ++j) {
 	if (j==i) {
-	  os << current_parameters.lower_triag_mat_as_vec[counter] << ";\n";
+	  os << std::scientific << std::setprecision(14) << current_parameters.lower_triag_mat_as_vec[counter] << ";\n";
 	} else {
-	  os << current_parameters.lower_triag_mat_as_vec[counter] << ",";
+	  os << std::scientific << std::setprecision(14) << current_parameters.lower_triag_mat_as_vec[counter] << ",";
 	}
 	counter = counter + 1;
       }
@@ -196,6 +199,8 @@ struct likelihood_point {
   double rho;
   //
   double log_likelihood;
+  //
+  bool FLIPPED;
 
   likelihood_point()
     : x_0_tilde(0.5),
@@ -205,8 +210,26 @@ struct likelihood_point {
       sigma_y_tilde(1.0),
       t_tilde(1.0),
       rho(0.0),
-      log_likelihood(1.0)
+      log_likelihood(1.0),
+      FLIPPED(false)
   {}
+
+  likelihood_point(const likelihood_point& current_lp) 
+  {
+    x_0_tilde = current_lp.x_0_tilde;
+    y_0_tilde = current_lp.y_0_tilde;
+    //
+    x_t_tilde = current_lp.x_t_tilde;
+    y_t_tilde = current_lp.y_t_tilde;
+    //
+    sigma_y_tilde = current_lp.sigma_y_tilde;
+    t_tilde = current_lp.t_tilde;
+    rho = current_lp.rho;
+    //
+    log_likelihood = current_lp.log_likelihood;
+    //
+    FLIPPED = current_lp.FLIPPED;
+  }
 
   likelihood_point(double x_0_tilde_in,
 		   double y_0_tilde_in,
@@ -215,7 +238,8 @@ struct likelihood_point {
 		   double sigma_y_tilde_in,
 		   double t_tilde_in,
 		   double rho_in,
-		   double log_likelihood_in)
+		   double log_likelihood_in,
+		   bool FLIPPED_IN)
     : x_0_tilde(x_0_tilde_in),
       y_0_tilde(y_0_tilde_in),
       x_t_tilde(x_t_tilde_in),
@@ -223,8 +247,59 @@ struct likelihood_point {
       sigma_y_tilde(sigma_y_tilde_in),
       t_tilde(t_tilde_in),
       rho(rho_in),
-      log_likelihood(log_likelihood_in)
+      log_likelihood(log_likelihood_in),
+      FLIPPED(FLIPPED_IN)
   {}
+
+  likelihood_point(double rho_in,
+		   double sigma_x,
+		   double sigma_y,
+		   double x_0_in,
+		   double y_0_in,
+		   double x_t,
+		   double y_t,
+		   double t,
+		   double a,
+		   double b,
+		   double c,
+		   double d) 
+  {
+    double Lx = b - a;
+    double Ly = d - c;
+
+    double x_T = x_t - a;
+    double x_0 = x_0_in - a;
+
+    double y_T = y_t - c;
+    double y_0 = y_0_in - c;
+    // STEP 1
+    double tau_x = sigma_x/Lx;
+    double tau_y = sigma_y/Ly;
+
+    x_t_tilde = x_T/Lx;
+    y_t_tilde = y_T/Ly;
+    x_0_tilde = x_0/Lx;
+    y_0_tilde = y_0/Ly;
+    sigma_y_tilde = tau_y/tau_x;
+    t_tilde = t*std::pow(tau_x, 2);
+    FLIPPED = false;
+	
+    if (tau_x < tau_y) {
+      FLIPPED = true;
+      x_t_tilde = y_T/Ly;
+      y_t_tilde = x_T/Lx;
+      //
+      x_0_tilde = y_0/Ly;
+      y_0_tilde = x_0/Lx;
+      //
+      sigma_y_tilde = tau_x/tau_y;
+      //
+      t_tilde = t*std::pow(tau_y, 2);
+    }
+
+    rho = rho_in;
+    log_likelihood = 1.0;
+  }
 
   likelihood_point& operator=(const likelihood_point& rhs)
   {
@@ -242,10 +317,13 @@ struct likelihood_point {
       rho = rhs.rho;
       //
       log_likelihood = rhs.log_likelihood;
+      FLIPPED = rhs.FLIPPED;
 
       return *this;
     }
   }
+
+  likelihood_point& operator=(const likelihood_point_transformed& rhs);
 
   likelihood_point& operator=(const BrownianMotion& BM)
   {
@@ -268,8 +346,10 @@ struct likelihood_point {
     y_0_tilde = y_0/Ly;
     sigma_y_tilde = tau_y/tau_x;
     t_tilde = std::pow(tau_x, 2);
+    FLIPPED = false;
 	
     if (tau_x < tau_y) {
+      FLIPPED = true;
       x_t_tilde = y_T/Ly;
       y_t_tilde = x_T/Lx;
       //
@@ -290,24 +370,25 @@ struct likelihood_point {
   friend std::ostream& operator<<(std::ostream& os,
 				  const likelihood_point& point)
   {
-    os << "x_0_tilde=" << point.x_0_tilde << ";\n";
-    os << "y_0_tilde=" << point.y_0_tilde << ";\n";
+    os << "x_0_tilde=" << std::scientific << std::setprecision(14) << point.x_0_tilde << ";\n";
+    os << "y_0_tilde=" << std::scientific << std::setprecision(14) << point.y_0_tilde << ";\n";
     //
-    os << "x_t_tilde=" << point.x_t_tilde << ";\n";
-    os << "y_t_tilde=" << point.y_t_tilde << ";\n";
+    os << "x_t_tilde=" << std::scientific << std::setprecision(14) << point.x_t_tilde << ";\n";
+    os << "y_t_tilde=" << std::scientific << std::setprecision(14) << point.y_t_tilde << ";\n";
     //
-    os << "sigma_y_tilde=" << point.sigma_y_tilde << ";\n";
-    os << "t_tilde=" << point.t_tilde << ";\n";
-    os << "rho=" << point.rho << ";\n";
+    os << "sigma_y_tilde=" << std::scientific << std::setprecision(14) << point.sigma_y_tilde << ";\n";
+    os << "t_tilde=" << std::scientific << std::setprecision(14) << point.t_tilde << ";\n";
+    os << "rho=" << std::scientific << std::setprecision(14) << point.rho << ";\n";
     //
-    os << "log_likelihood=" << point.log_likelihood << ";\n";
+    os << "log_likelihood=" << std::scientific << std::setprecision(14) << point.log_likelihood << ";\n";
+    os << "FLIPPED=" << std::scientific << std::setprecision(14) << point.FLIPPED << ";\n";
 
     return os;
   }
 
   void print_point()
   {
-    printf("x_0_tilde=%f \ny_0_tilde=%f \nx_t_tilde=%f \ny_t_tilde=%f \nsigma_y_tilde=%f \nt_tilde=%f \nrho=%f \nlog_likelihood=%f \n",
+    printf("x_0_tilde=%f \ny_0_tilde=%f \nx_t_tilde=%f \ny_t_tilde=%f \nsigma_y_tilde=%f \nt_tilde=%f \nrho=%f \nlog_likelihood=%f \nFLIPPED=%d \n",
   	   x_0_tilde,
   	   y_0_tilde,
   	   x_t_tilde,
@@ -315,7 +396,8 @@ struct likelihood_point {
   	   sigma_y_tilde,
   	   t_tilde,
   	   rho,
-  	   log_likelihood);
+  	   log_likelihood,
+	   FLIPPED);
   }
 
   friend std::istream& operator>>(std::istream& is,
@@ -363,6 +445,11 @@ struct likelihood_point {
     std::getline(is, value, ';');
     point.log_likelihood = std::stod(value);
 
+    // FLIPPED
+    std::getline(is, name, '=');
+    std::getline(is, value, ';');
+    point.FLIPPED = std::stoi(value);
+
     return is;
   }
 
@@ -395,6 +482,7 @@ struct likelihood_point_transformed {
   double rho_transformed;
   //
   double log_likelihood_transformed;
+  bool FLIPPED;
   //
   //
   void set_likelihood_point_transformed(const likelihood_point& lp);
@@ -402,6 +490,9 @@ struct likelihood_point_transformed {
   likelihood_point_transformed();
   //
   gsl_vector* as_gsl_vector() const;
+
+  friend std::ostream& operator<<(std::ostream& os,
+				  const likelihood_point_transformed& point);
 };
 
 double likelihood_point_distance(const likelihood_point& lp1,
@@ -416,9 +507,10 @@ double covariance(const likelihood_point& lp1,
 gsl_matrix* covariance_matrix(const std::vector<likelihood_point>& lps,
 			      const parameters_nominal& params);
 
+
 struct GaussianInterpolator {
-  std::vector<likelihood_point> points_for_integration;
-  std::vector<likelihood_point> points_for_interpolation;
+  std::vector<likelihood_point_transformed> points_for_integration;
+  std::vector<likelihood_point_transformed> points_for_interpolation;
   parameters_nominal parameters;
   gsl_matrix* C;
   gsl_matrix* Cinv;
@@ -433,9 +525,9 @@ struct GaussianInterpolator {
 		       const parameters_nominal& params);
   GaussianInterpolator(const GaussianInterpolator& rhs);
   
-  GaussianInterpolator& operator=(const GaussianInterpolator& rhs);
+  virtual GaussianInterpolator& operator=(const GaussianInterpolator& rhs);
 
-  ~GaussianInterpolator() {
+  virtual ~GaussianInterpolator() {
     gsl_matrix_free(C);
     gsl_matrix_free(Cinv);
     gsl_vector_free(y);
@@ -450,33 +542,59 @@ struct GaussianInterpolator {
   }
   
   void set_linalg_members();
-  inline void add_point_for_integration(const likelihood_point& new_point) {
+  inline void add_point_for_integration(const likelihood_point_transformed& new_point) {
     points_for_integration.push_back(new_point);
   }
-  inline void add_point_for_interpolation(const likelihood_point& new_point) {
+  inline void add_point_for_interpolation(const likelihood_point_transformed& new_point) {
     points_for_interpolation.push_back(new_point);
     set_linalg_members();
   }
 
-  gsl_matrix* covariance_matrix(const std::vector<likelihood_point>& lps,
+  gsl_matrix* covariance_matrix(const std::vector<likelihood_point_transformed>& lps,
 				const parameters_nominal& params) const;
 
-  double covariance(const likelihood_point& lp1,
-		    const likelihood_point& lp2,
+  double covariance(const likelihood_point_transformed& lp1,
+		    const likelihood_point_transformed& lp2,
 		    const parameters_nominal& params) const;
 
-  double likelihood_point_distance(const likelihood_point& lp1,
-				   const likelihood_point& lp2,
+  double likelihood_point_distance(const likelihood_point_transformed& lp1,
+				   const likelihood_point_transformed& lp2,
 				   const parameters_nominal& params) const;
 
   double operator()(const likelihood_point& x);
-  double prediction_variance(const likelihood_point& x);
+  double prediction_standard_dev(const likelihood_point& x);
   static double optimization_wrapper(const std::vector<double> &x,
 				     std::vector<double> &grad,
 				     void * data);
   void optimize_parameters();
 };
 
-double optimization_wrapper(const std::vector<double> &x,
-			    std::vector<double> &grad,
-			    void * data);
+struct PointChecker {
+  gsl_vector * mu_mean;
+  gsl_matrix * sigma_cov;
+
+  PointChecker();
+  PointChecker(const PointChecker& rhs);
+  PointChecker& operator=(const PointChecker& rhs);
+
+  ~PointChecker() {
+    gsl_vector_free(mu_mean);
+    gsl_matrix_free(sigma_cov);
+  }
+  
+  PointChecker(const std::vector<likelihood_point_transformed> lptrs);
+};
+
+struct GaussianInterpolatorWithChecker : 
+  public GaussianInterpolator {
+  
+  GaussianInterpolatorWithChecker();
+  GaussianInterpolatorWithChecker(const std::vector<likelihood_point>& points_for_integration_in,
+				  const std::vector<likelihood_point>& points_for_interpolation_in,
+				  const parameters_nominal& params);
+  GaussianInterpolatorWithChecker(const GaussianInterpolatorWithChecker& rhs);
+  // GaussianInterpolatorWithChecker(const GaussianInterpolator& rhs);
+  virtual ~GaussianInterpolatorWithChecker() {}
+
+  GaussianInterpolatorWithChecker& operator=(const GaussianInterpolatorWithChecker& rhs);
+};
