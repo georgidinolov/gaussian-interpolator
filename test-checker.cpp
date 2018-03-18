@@ -35,7 +35,8 @@ int main(int argc, char *argv[]) {
 
   std::ifstream input_file(input_file_name);
   
-  std::vector<likelihood_point> points_for_kriging = std::vector<likelihood_point> (0);
+  std::vector<likelihood_point> points_for_kriging_flipped = std::vector<likelihood_point> (0);
+  std::vector<likelihood_point> points_for_kriging_not_flipped = std::vector<likelihood_point> (0);
   std::vector<likelihood_point> points_for_integration = std::vector<likelihood_point> (1);
 
   if (input_file.is_open()) {
@@ -43,7 +44,11 @@ int main(int argc, char *argv[]) {
       likelihood_point current_lp = likelihood_point();
       input_file >> current_lp;
       if (i>=0) {
-	points_for_kriging.push_back(current_lp);
+	if (current_lp.FLIPPED) {
+	  points_for_kriging_flipped.push_back(current_lp);
+	} else {
+	  points_for_kriging_not_flipped.push_back(current_lp);
+	}
       }
     }
   }
@@ -52,26 +57,42 @@ int main(int argc, char *argv[]) {
   std::ifstream points_for_eval_file("likelihood_points_from_filter.csv");
   likelihood_point lp_for_eval = likelihood_point();
 
-  GaussianInterpolator* GP_prior = new GaussianInterpolator(points_for_integration,
-						       points_for_kriging,
+  GaussianInterpolatorWithChecker GP_prior_flipped(points_for_integration,
+						   points_for_kriging_flipped,
+						   params_for_GP_prior);
+
+  GaussianInterpolatorWithChecker GP_prior_not_flipped(points_for_integration,
+						       points_for_kriging_not_flipped,
 						       params_for_GP_prior);
+
+  for (const likelihood_point_transformed& current_lp_tr : GP_prior_not_flipped.points_for_interpolation) {
+    std::cout << current_lp_tr.sigma_y_tilde_transformed << " ";
+  }
+  std::cout << std::endl;
+
+  PointChecker point_checker_not_flipped(GP_prior_not_flipped.points_for_interpolation);
+  PointChecker point_checker_flipped(GP_prior_flipped.points_for_interpolation);
+
+  std::cout << point_checker_not_flipped;
+  std::cout << point_checker_flipped;
+
+  for (const likelihood_point_transformed& current_lp_tr : GP_prior_not_flipped.points_for_interpolation) {
+    likelihood_point current_lp;
+    current_lp = current_lp_tr;
+    std::cout << "("
+	      << point_checker_not_flipped.mahalanobis_distance(current_lp) << ","
+	      << GP_prior_not_flipped.check_point(current_lp) << ") ";
+  }
+  std::cout << "\n" << std::endl;
+
+  for (const likelihood_point_transformed& current_lp_tr : GP_prior_flipped.points_for_interpolation) {
+    likelihood_point current_lp;
+    current_lp = current_lp_tr;
+    std::cout << "("
+	      << point_checker_flipped.mahalanobis_distance(current_lp) << ","
+	      << GP_prior_flipped.check_point(current_lp) << ") ";
+  }
+  std::cout << std::endl;
   
-  GaussianInterpolator GP_prior_w_checker;
-  GP_prior_w_checker = *GP_prior;
-  //   GaussianInterpolatorWithChecker(points_for_integration,
-  // 				    points_for_kriging,
-  // 				    params_for_GP_prior);
-
-  // *GP_prior = GaussianInterpolatorWithChecker(points_for_integration,
-  // 					     points_for_kriging,
-  // 					     params_for_GP_prior);
-
-  //  *GP_prior = *GP_prior_w_checker;
-
-  // *GP_prior = GaussianInterpolator(points_for_integration,
-  // 				    points_for_kriging,
-  // 				   params_for_GP_prior);
-  // GaussianInterpolator GP_prior_2(GP_prior_w_checker);
-
   return 0;
 }

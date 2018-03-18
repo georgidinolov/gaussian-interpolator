@@ -29,7 +29,7 @@ likelihood_point& likelihood_point::operator=(const likelihood_point_transformed
     -log(sigma_y_tilde) +
     -log(t_tilde) +
     +log(2.0) - log(1-std::pow(rho,2));
-  
+
   return *this;
 }
 
@@ -591,55 +591,165 @@ void GaussianInterpolator::optimize_parameters()
   set_linalg_members();
 }
 
-// CHECKER START 
+// CHECKER START
 PointChecker::PointChecker()
   : mu_mean(NULL),
-    sigma_cov(NULL)
+    sigma_cov(NULL),
+    sigma_cov_inv(NULL)
 {
-  mu_mean = gsl_vector_alloc(2);
-  sigma_cov = gsl_matrix_alloc(2,2);
+  mu_mean = gsl_vector_calloc(3);
+  sigma_cov = gsl_matrix_calloc(3,3);
+  sigma_cov_inv = gsl_matrix_calloc(3,3);
 }
 
 PointChecker::PointChecker(const PointChecker& rhs)
   : mu_mean(NULL),
-    sigma_cov(NULL)
+    sigma_cov(NULL),
+    sigma_cov_inv(NULL)
 {
-  mu_mean = gsl_vector_alloc(2);
-  sigma_cov = gsl_matrix_alloc(2,2);
+  mu_mean = gsl_vector_alloc(rhs.mu_mean->size);
+  sigma_cov = gsl_matrix_alloc(rhs.sigma_cov->size1,
+			       rhs.sigma_cov->size2);
+  sigma_cov_inv = gsl_matrix_alloc(rhs.sigma_cov_inv->size1,
+				 rhs.sigma_cov_inv->size2);
 
   gsl_vector_memcpy(mu_mean, rhs.mu_mean);
-  gsl_vector_memcpy(sigma_cov, rhs.sigma_cov);
+  gsl_matrix_memcpy(sigma_cov, rhs.sigma_cov);
+  gsl_matrix_memcpy(sigma_cov_inv, rhs.sigma_cov_inv);
 }
 
 PointChecker& PointChecker::operator=(const PointChecker& rhs)
 {
   if (this==&rhs) {
-    return *this; 
+    return *this;
   } else {
     gsl_vector_free(mu_mean);
     gsl_matrix_free(sigma_cov);
-    
-    mu_mean = gls_vector_alloc(rhs.mu_mean->size);
+    gsl_matrix_free(sigma_cov_inv);
+
+    mu_mean = gsl_vector_alloc(rhs.mu_mean->size);
     sigma_cov = gsl_matrix_alloc(rhs.sigma_cov->size1,
 				 rhs.sigma_cov->size2);
+    sigma_cov_inv = gsl_matrix_alloc(rhs.sigma_cov_inv->size1,
+				     rhs.sigma_cov_inv->size2);
 
     gsl_vector_memcpy(mu_mean, rhs.mu_mean);
     gsl_matrix_memcpy(sigma_cov, rhs.sigma_cov);
+    gsl_matrix_memcpy(sigma_cov_inv, rhs.sigma_cov_inv);
+
+    return *this;
   }
 }
 
 PointChecker::PointChecker(const std::vector<likelihood_point_transformed>& lptrs)
   : mu_mean(NULL),
-    sigma_cov(NULL)
+    sigma_cov(NULL),
+    sigma_cov_inv(NULL)
 {
-  mu_mean = gsl_vector_alloc(3);
-  sigma_cov = gsl_matrix_alloc(3,3);
-  
+  mu_mean = gsl_vector_calloc(3);
+  sigma_cov = gsl_matrix_calloc(3,3);
+  sigma_cov_inv = gsl_matrix_calloc(3,3);
+
+  // calculating sufficient statistics
+  gsl_vector* sums = gsl_vector_calloc(3);
+  gsl_matrix* sums_of_squares = gsl_matrix_calloc(3,3);
+
+  for (const likelihood_point_transformed& current_lp : lptrs) {
+    gsl_vector* current_lp_gsl = current_lp.as_gsl_vector();
+
+    for (unsigned i=0; i<3; ++i) {
+      double current_sum_elem = gsl_vector_get(sums, i);
+      gsl_vector_set(sums, i,
+		     current_sum_elem + gsl_vector_get(current_lp_gsl, 4+i));
+
+      for (unsigned j=0; j<3; ++j) {
+	double current_sum_sq_elem = gsl_matrix_get(sums_of_squares,i,j);
+	gsl_matrix_set(sums_of_squares, i, j,
+		       current_sum_sq_elem +
+		       gsl_vector_get(current_lp_gsl, 4+i)*
+		       gsl_vector_get(current_lp_gsl, 4+j));
+
+      }
+    }
+
+    gsl_vector_free(current_lp_gsl);
+  }
+
+  // calculating mean
+  gsl_vector_memcpy(mu_mean, sums);
+  gsl_vector_scale(mu_mean, 1.0/lptrs.size());
+
+  // calculating cov
+  for (unsigned i=0; i<3; ++i) {
+    for (unsigned j=0; j<3; ++j) {
+      gsl_matrix_set(sigma_cov, i,j,
+		     gsl_matrix_get(sums_of_squares,i,j)/(1.0*lptrs.size()) -
+		     gsl_vector_get(mu_mean,i)*gsl_vector_get(mu_mean,j));
+    }
+  }
+
+  // calculating inv cov
+  gsl_matrix_memcpy(sigma_cov_inv, sigma_cov);
+  gsl_linalg_cholesky_decomp(sigma_cov_inv);
+  gsl_linalg_cholesky_invert(sigma_cov_inv);
+
+  gsl_matrix_free(sums_of_squares);
+  gsl_vector_free(sums);
+}
+
+double PointChecker::mahalanobis_distance(const likelihood_point& lp) const
+{
+  likelihood_point_transformed lp_tr(lp);
+  gsl_vector* lp_tr_gsl = lp_tr.as_gsl_vector();
+  gsl_vector* diff2 = gsl_vector_calloc(3);
+  gsl_vector_view lp_tr_gsl_subvec = gsl_vector_subvector(lp_tr_gsl,
+							  4, // offset
+							  3); // size
+  gsl_vector_sub(&lp_tr_gsl_subvec.vector, mu_mean);
+  gsl_vector_memcpy(diff2, &lp_tr_gsl_subvec.vector);
+  //
+  // y = alpha*A + beta*y, where A is symmetric
+  gsl_blas_dsymv(CblasUpper, // upper
+		 1.0, // alpha
+		 sigma_cov_inv, // A
+		 diff2, // x
+		 0.0,
+		 &lp_tr_gsl_subvec.vector);
+
+  double ss = 0;
+  gsl_blas_ddot(diff2, &lp_tr_gsl_subvec.vector, &ss);
+  //
+  gsl_vector_free(lp_tr_gsl);
+  gsl_vector_free(diff2);
+
+  return std::sqrt(ss);
+}
+
+std::ostream& operator<<(std::ostream& os,
+			 const PointChecker& checker)
+{
+  os << "mu_mean = (";
+  for (unsigned i=0; i<checker.mu_mean->size-1; ++i) {
+    os << gsl_vector_get(checker.mu_mean, i) << " ";
+  }
+  os << gsl_vector_get(checker.mu_mean, checker.mu_mean->size-1) << ")\n";
+
+  os << "sigma_cov = \n";
+  for (unsigned i=0; i<checker.sigma_cov->size1; ++i) {
+    for (unsigned j=0; j<checker.sigma_cov->size2; ++j) {
+      os << gsl_matrix_get(checker.sigma_cov, i, j) << " ";
+    }
+    os << "\n";
+  }
+  os << "\n";
+
+  return os;
 }
 
 // GAUSSIAN INTERPOLATOR WITH CHECKER START
 GaussianInterpolatorWithChecker::GaussianInterpolatorWithChecker()
-  : GaussianInterpolator()
+  : GaussianInterpolator(),
+    point_checker(PointChecker())
 {}
 
 GaussianInterpolatorWithChecker::
@@ -648,14 +758,16 @@ GaussianInterpolatorWithChecker(const std::vector<likelihood_point>& points_for_
 				const parameters_nominal& params)
   : GaussianInterpolator(points_for_integration_in,
 			 points_for_interpolation_in,
-			 params)
+			 params),
+    point_checker(PointChecker(points_for_interpolation))
 {
   printf("in GaussianInterpolatorWithChecker::ctor\n");
 }
 
 GaussianInterpolatorWithChecker::
 GaussianInterpolatorWithChecker(const GaussianInterpolatorWithChecker& rhs)
-  : GaussianInterpolator(rhs)
+  : GaussianInterpolator(rhs),
+    point_checker(PointChecker(points_for_interpolation))
 {}
 
 // GaussianInterpolatorWithChecker::
@@ -669,7 +781,13 @@ GaussianInterpolatorWithChecker& GaussianInterpolatorWithChecker::operator=(cons
       return *this;
     } else {
       GaussianInterpolator::operator=(rhs);
+      point_checker = PointChecker(rhs.points_for_interpolation);
 
       return *this;
     }
+}
+
+double GaussianInterpolatorWithChecker::check_point(const likelihood_point& lp) const
+{
+  return point_checker.mahalanobis_distance(lp);
 }

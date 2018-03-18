@@ -572,6 +572,7 @@ struct GaussianInterpolator {
 struct PointChecker {
   gsl_vector * mu_mean;
   gsl_matrix * sigma_cov;
+  gsl_matrix * sigma_cov_inv;
 
   PointChecker();
   PointChecker(const PointChecker& rhs);
@@ -580,21 +581,28 @@ struct PointChecker {
   ~PointChecker() {
     gsl_vector_free(mu_mean);
     gsl_matrix_free(sigma_cov);
+    gsl_matrix_free(sigma_cov_inv);
   }
-  
-  PointChecker(const std::vector<likelihood_point_transformed> lptrs);
+  PointChecker(const std::vector<likelihood_point_transformed>& lptrs);
+  double mahalanobis_distance(const likelihood_point& lp) const;
+
+  friend std::ostream& operator<<(std::ostream& os,
+				  const PointChecker& checker);
 };
 
 struct GaussianInterpolatorWithChecker : 
   public GaussianInterpolator {
+  PointChecker point_checker;
   
   GaussianInterpolatorWithChecker();
   GaussianInterpolatorWithChecker(const std::vector<likelihood_point>& points_for_integration_in,
 				  const std::vector<likelihood_point>& points_for_interpolation_in,
 				  const parameters_nominal& params);
+
   GaussianInterpolatorWithChecker(const GaussianInterpolatorWithChecker& rhs);
   // GaussianInterpolatorWithChecker(const GaussianInterpolator& rhs);
   virtual ~GaussianInterpolatorWithChecker() {}
 
   GaussianInterpolatorWithChecker& operator=(const GaussianInterpolatorWithChecker& rhs);
+  double check_point(const likelihood_point& lp) const;
 };
