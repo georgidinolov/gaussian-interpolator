@@ -36,18 +36,18 @@ struct parameters_nominal {
   std::vector<double> lower_triag_mat_as_vec = std::vector<double> (28, 1.0);
 
   parameters_nominal()
-    : sigma_2(1.0),
-      phi(0.0),
+    : sigma_2(0.0001),
+      phi(-10.0),
       nu(5),
       tau_2(1.0)
   {
-    lower_triag_mat_as_vec = std::vector<double> {1.0, //0
-						  0.0, 1.0, //2
-						  0.0, 0.0, 1.0, //5
-						  0.0, 0.0, 0.0, 1.0, //9
-						  0.0, 0.0, 0.0, 0.0, 1.0, //14
-						  0.0, 0.0, 0.0, 0.0, 0.0, 1.0, //20
-						  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0}; //27
+    lower_triag_mat_as_vec = std::vector<double> {0.1, //0
+						  0.0, 0.1, //2
+						  0.0, 0.0, 0.1, //5
+						  0.0, 0.0, 0.0, 0.1, //9
+						  0.0, 0.0, 0.0, 0.0, 0.1, //14
+						  0.0, 0.0, 0.0, 0.0, 0.0, 0.1, //20
+						  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1}; //27
   };
 
   parameters_nominal(const std::vector<double> &x)
@@ -523,6 +523,9 @@ struct GaussianInterpolator {
   GaussianInterpolator(const std::vector<likelihood_point>& points_for_integration_in,
 		       const std::vector<likelihood_point>& points_for_interpolation_in,
 		       const parameters_nominal& params);
+  GaussianInterpolator(const std::vector<likelihood_point>& points_for_integration_in,
+		       const std::vector<likelihood_point>& points_for_interpolation_in);
+  
   GaussianInterpolator(const GaussianInterpolator& rhs);
   
   virtual GaussianInterpolator& operator=(const GaussianInterpolator& rhs);
@@ -598,6 +601,8 @@ struct GaussianInterpolatorWithChecker :
   GaussianInterpolatorWithChecker(const std::vector<likelihood_point>& points_for_integration_in,
 				  const std::vector<likelihood_point>& points_for_interpolation_in,
 				  const parameters_nominal& params);
+  GaussianInterpolatorWithChecker(const std::vector<likelihood_point>& points_for_integration_in,
+				  const std::vector<likelihood_point>& points_for_interpolation_in);
 
   GaussianInterpolatorWithChecker(const GaussianInterpolatorWithChecker& rhs);
   // GaussianInterpolatorWithChecker(const GaussianInterpolator& rhs);
