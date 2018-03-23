@@ -9,6 +9,7 @@ double gp_logit_inv(double r) {
   return exp(r)/(1 + exp(r));
 }
 
+
 likelihood_point& likelihood_point::operator=(const likelihood_point_transformed& rhs)
 {
   x_0_tilde = gp_logit_inv(rhs.x_0_tilde_transformed);
@@ -265,7 +266,8 @@ GaussianInterpolator(const std::vector<likelihood_point>& points_for_integration
   	  points_for_interpolation.push_back(current_lp_tr);
   	}
   }
-
+  printf("number of points for kriging %d\n",
+	 points_for_interpolation.size());
   C = covariance_matrix(points_for_interpolation,
 			parameters);
   Cinv = gsl_matrix_alloc(points_for_interpolation.size(),
@@ -287,6 +289,7 @@ GaussianInterpolator(const std::vector<likelihood_point>& points_for_integration
 
   gsl_vector_memcpy(difference, y);
   gsl_vector_sub(difference, mean);
+  printf("done GaussianInterpolator::ctor\n");
 }
 
 GaussianInterpolator::

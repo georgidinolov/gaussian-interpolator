@@ -183,7 +183,7 @@ struct parameters_nominal {
 
     return out;
   }
-    
+
 };
 
 
