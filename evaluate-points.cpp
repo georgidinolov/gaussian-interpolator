@@ -81,7 +81,7 @@ int main(int argc, char *argv[]) {
   std::vector<std::vector<likelihood_point>> points_for_kriging_flipped = std::vector<std::vector<likelihood_point>> (number_points_of_data);
   std::vector<std::vector<likelihood_point>> points_for_kriging_not_flipped = std::vector<std::vector<likelihood_point>> (number_points_of_data);
   std::vector<likelihood_point> points_for_integration = std::vector<likelihood_point> (1);
-  
+
   for (unsigned i=0; i<number_points_of_data; ++i) {
     for (unsigned m=0; m<number_points_per_datum; ++m) {
       likelihood_point current_lp = likelihood_point();
@@ -99,7 +99,7 @@ int main(int argc, char *argv[]) {
     std::cout << points_for_kriging_flipped[i].size() << "\n";
     std::cout << std::endl;
   }
-  std::cout << "done with points for kriging\n";  
+  std::cout << "done with points for kriging\n";
 
   std::vector<GaussianInterpolatorWithChecker> GPs_not_flipped(number_points_of_data);
   std::vector<GaussianInterpolatorWithChecker> GPs_flipped(number_points_of_data);
@@ -107,7 +107,7 @@ int main(int argc, char *argv[]) {
   unsigned i;
 #pragma omp parallel default(none) private(i) shared(points_for_integration, points_for_kriging_flipped, points_for_kriging_not_flipped, number_points_of_data, GPs_not_flipped, GPs_flipped)
   {
-#pragma omp for  
+#pragma omp for
     for (i=0; i<number_points_of_data; ++i) {
       std::string not_flipped_params_file_name =
 	"optimal-parameters-data-point-" + std::to_string(i) +
@@ -115,13 +115,13 @@ int main(int argc, char *argv[]) {
       std::ifstream not_flipped_params_file(not_flipped_params_file_name);
       parameters_nominal not_flipped_params = parameters_nominal();
       not_flipped_params_file >> not_flipped_params;
-      
+
       if (points_for_kriging_not_flipped[i].size() > 6) {
 	GPs_not_flipped[i] = GaussianInterpolatorWithChecker(points_for_integration,
-							     points_for_kriging_not_flipped[i]);
+						  points_for_kriging_not_flipped[i]);
       } else {
 	GPs_not_flipped[i] = GaussianInterpolatorWithChecker(points_for_integration,
-							     points_for_kriging_flipped[i]);
+						  points_for_kriging_flipped[i]);
       }
       GPs_not_flipped[i].optimize_parameters();
 
@@ -131,31 +131,32 @@ int main(int argc, char *argv[]) {
       std::ifstream flipped_params_file(flipped_params_file_name);
       parameters_nominal flipped_params = parameters_nominal();
       flipped_params_file >> flipped_params;
+
       if (points_for_kriging_flipped[i].size() > 6) {
 	GPs_flipped[i] = GaussianInterpolatorWithChecker(points_for_integration,
-							 points_for_kriging_flipped[i]);
+					      points_for_kriging_flipped[i]);
       } else {
 	GPs_flipped[i] = GaussianInterpolatorWithChecker(points_for_integration,
-							 points_for_kriging_not_flipped[i]);
+					      points_for_kriging_not_flipped[i]);
       }
       GPs_flipped[i].optimize_parameters();
     }
   }
-  
+
   std::vector<std::string> fl_not_fl = std::vector<std::string> {"flipped", "not-flipped"};
   for (i=0; i<number_points_of_data; ++i) {
     for (unsigned j=0; j<2; ++j) {
       std::string output_file_name =
-	output_file_prefix + "-data-point-" + std::to_string(i) +
-	"-" + fl_not_fl[j] + ".csv";
+  	output_file_prefix + "-data-point-" + std::to_string(i) +
+  	"-" + fl_not_fl[j] + ".csv";
 
       GaussianInterpolatorWithChecker GP_prior = GaussianInterpolatorWithChecker();
       if (j==0) {
-	GP_prior = GPs_flipped[i];
+      	GP_prior = GPs_flipped[i];
       } else {
-	GP_prior = GPs_not_flipped[i];
+      	GP_prior = GPs_not_flipped[i];
       }
-      
+
       // PLOTTING T //
       std::ofstream output_file(output_file_name);
       unsigned M = 100;
@@ -166,32 +167,33 @@ int main(int argc, char *argv[]) {
       likelihood_point lp_for_eval_constant = likelihood_point();
       lp_for_eval_constant = GP_prior.points_for_interpolation[0];
       likelihood_point lp_for_eval = likelihood_point();
-      
+
       lp_for_eval = lp_for_eval_constant;
       std::vector<double> lls_t = ts;
       std::vector<double> lls_t_std_dev = ts;
       for (unsigned i=0; i<lls_t.size(); ++i) {
-	lp_for_eval.t_tilde = ts[i];
-	lls_t[i] = GP_prior(lp_for_eval);
-	lls_t_std_dev[i] = GP_prior.prediction_standard_dev(lp_for_eval);
+      	lp_for_eval.t_tilde = ts[i];
+      	lls_t[i] = GP_prior(lp_for_eval);
+      	lls_t_std_dev[i] = GP_prior.prediction_standard_dev(lp_for_eval);
+	std::cout << GP_prior.check_point(lp_for_eval) << " ";
       }
       std::cout << std::endl;
 
       output_file << "ts = c(";
       for (unsigned i=0; i<ts.size()-1; ++i) {
-	output_file << ts[i] << ",";
+      	output_file << ts[i] << ",";
       }
       output_file << ts[ts.size()-1] << ");\n";
 
       output_file << "lls.t = c(";
       for (unsigned i=0; i<lls_t.size()-1; ++i) {
-	output_file << lls_t[i] << ",";
+      	output_file << lls_t[i] << ",";
       }
       output_file << lls_t[lls_t.size()-1] << ");\n";
 
       output_file << "lls.t.std = c(";
       for (unsigned i=0; i<lls_t_std_dev.size()-1; ++i) {
-	output_file << lls_t_std_dev[i] << ",";
+      	output_file << lls_t_std_dev[i] << ",";
       }
       output_file << lls_t_std_dev[lls_t_std_dev.size()-1] << ");\n";
       output_file << "par(mfcol=c(3,2), mar=c(4,4,4,4));\n";
@@ -209,26 +211,26 @@ int main(int argc, char *argv[]) {
       std::vector<double> lls_sigma = sigma_tildes;
       std::vector<double> lls_sigma_std_dev = sigma_tildes;
       for (unsigned i=0; i<lls_sigma.size(); ++i) {
-	lp_for_eval.sigma_y_tilde = sigma_tildes[i];
-	lls_sigma[i] = GP_prior(lp_for_eval);
-	lls_sigma_std_dev[i] = GP_prior.prediction_standard_dev(lp_for_eval);
+      	lp_for_eval.sigma_y_tilde = sigma_tildes[i];
+      	lls_sigma[i] = GP_prior(lp_for_eval);
+      	lls_sigma_std_dev[i] = GP_prior.prediction_standard_dev(lp_for_eval);
       }
 
       output_file << "sigmas = c(";
       for (unsigned i=0; i<sigma_tildes.size()-1; ++i) {
-	output_file << sigma_tildes[i] << ",";
+      	output_file << sigma_tildes[i] << ",";
       }
       output_file << sigma_tildes[sigma_tildes.size()-1] << ");\n";
 
       output_file << "lls.sigma = c(";
       for (unsigned i=0; i<lls_sigma.size()-1; ++i) {
-	output_file << lls_sigma[i] << ",";
+      	output_file << lls_sigma[i] << ",";
       }
       output_file << lls_sigma[lls_sigma.size()-1] << ");\n";
 
       output_file << "lls.sigma.std = c(";
       for (unsigned i=0; i<lls_sigma_std_dev.size()-1; ++i) {
-	output_file << lls_sigma_std_dev[i] << ",";
+      	output_file << lls_sigma_std_dev[i] << ",";
       }
       output_file << lls_sigma_std_dev[lls_sigma_std_dev.size()-1] << ");\n";
 
@@ -247,26 +249,26 @@ int main(int argc, char *argv[]) {
       std::vector<double> lls_rho = rhos;
       std::vector<double> lls_rho_std_dev = rhos;
       for (unsigned i=0; i<lls_rho.size(); ++i) {
-	lp_for_eval.rho = rhos[i];
-	lls_rho[i] = GP_prior(lp_for_eval);
-	lls_rho_std_dev[i] = GP_prior.prediction_standard_dev(lp_for_eval);
+      	lp_for_eval.rho = rhos[i];
+      	lls_rho[i] = GP_prior(lp_for_eval);
+      	lls_rho_std_dev[i] = GP_prior.prediction_standard_dev(lp_for_eval);
       }
 
       output_file << "rhos = c(";
       for (unsigned i=0; i<rhos.size()-1; ++i) {
-	output_file << rhos[i] << ",";
+      	output_file << rhos[i] << ",";
       }
       output_file << rhos[rhos.size()-1] << ");\n";
 
       output_file << "lls.rho = c(";
       for (unsigned i=0; i<lls_rho.size()-1; ++i) {
-	output_file << lls_rho[i] << ",";
+      	output_file << lls_rho[i] << ",";
       }
       output_file << lls_rho[lls_rho.size()-1] << ");\n";
 
       output_file << "lls.rho.std = c(";
       for (unsigned i=0; i<lls_rho_std_dev.size()-1; ++i) {
-	output_file << lls_rho_std_dev[i] << ",";
+      	output_file << lls_rho_std_dev[i] << ",";
       }
       output_file << lls_rho_std_dev[lls_rho_std_dev.size()-1] << ");\n";
 
@@ -288,6 +290,10 @@ int main(int argc, char *argv[]) {
       output_file << "lines(rhos, exp(lls.rho) / exp(2*(lls.rho.std)), col=2);\n";
     }
   }
+
+
+
+  
 //   // PLOTTING T //
 //   std::ofstream output_file(output_file_name);
 //   unsigned M = 100;
