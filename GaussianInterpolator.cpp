@@ -208,7 +208,6 @@ GaussianInterpolator::GaussianInterpolator()
     difference(NULL),
     c(NULL)
 {
-  printf("in GaussianInterpolator::default ctor\n");
   C = covariance_matrix(points_for_interpolation,
 			parameters);
   Cinv = gsl_matrix_alloc(points_for_interpolation.size(),
@@ -245,7 +244,6 @@ GaussianInterpolator(const std::vector<likelihood_point>& points_for_integration
     difference(NULL),
     c(NULL)
 {
-  printf("in GaussianInterpolator::ctor\n");
   points_for_integration = std::vector<likelihood_point_transformed> (0);
   //
   for (likelihood_point current_lp : points_for_integration_in) {
@@ -266,8 +264,7 @@ GaussianInterpolator(const std::vector<likelihood_point>& points_for_integration
   	  points_for_interpolation.push_back(current_lp_tr);
   	}
   }
-  printf("number of points for kriging %d\n",
-	 points_for_interpolation.size());
+  points_for_interpolation.size();
   C = covariance_matrix(points_for_interpolation,
 			parameters);
   Cinv = gsl_matrix_alloc(points_for_interpolation.size(),
@@ -289,7 +286,6 @@ GaussianInterpolator(const std::vector<likelihood_point>& points_for_integration
 
   gsl_vector_memcpy(difference, y);
   gsl_vector_sub(difference, mean);
-  printf("done GaussianInterpolator::ctor\n");
 }
 
 GaussianInterpolator::
@@ -306,7 +302,6 @@ GaussianInterpolator(const std::vector<likelihood_point>& points_for_integration
     difference(NULL),
     c(NULL)
 {
-  printf("in GaussianInterpolator::ctor\n");
   points_for_integration = std::vector<likelihood_point_transformed> (0);
   //
   for (likelihood_point current_lp : points_for_integration_in) {
@@ -388,15 +383,13 @@ GaussianInterpolator::GaussianInterpolator(const GaussianInterpolator& rhs)
 
 GaussianInterpolator& GaussianInterpolator::operator=(const GaussianInterpolator& rhs)
 {
-  printf("in GaussianInterpolator::operator=\n");
     if (this==&rhs) {
       return *this;
     } else {
       points_for_integration = rhs.points_for_integration;
       points_for_interpolation = rhs.points_for_interpolation;
-      parameters = parameters;
+      parameters = rhs.parameters;
       set_linalg_members();
-
       return *this;
     }
 }
@@ -620,7 +613,6 @@ void GaussianInterpolator::optimize_parameters()
     }
   }
 
-
   opt.optimize(optimal_params, maxf);
 
   // parameters_nominal new_parameters = parameters_nominal(optimal_params);
@@ -819,7 +811,6 @@ GaussianInterpolatorWithChecker(const std::vector<likelihood_point>& points_for_
 			 points_for_interpolation_in),
     point_checker(PointChecker(points_for_interpolation))
 {
-  printf("in GaussianInterpolatorWithChecker::ctor\n");
 }
 
 GaussianInterpolatorWithChecker::
@@ -831,7 +822,6 @@ GaussianInterpolatorWithChecker(const std::vector<likelihood_point>& points_for_
 			 params),
     point_checker(PointChecker(points_for_interpolation))
 {
-  printf("in GaussianInterpolatorWithChecker::ctor\n");
 }
 
 GaussianInterpolatorWithChecker::
@@ -851,7 +841,7 @@ GaussianInterpolatorWithChecker& GaussianInterpolatorWithChecker::operator=(cons
       return *this;
     } else {
       GaussianInterpolator::operator=(rhs);
-      point_checker = PointChecker(rhs.points_for_interpolation);
+      point_checker = PointChecker(points_for_interpolation);
 
       return *this;
     }
