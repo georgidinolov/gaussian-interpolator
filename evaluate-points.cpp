@@ -109,12 +109,12 @@ int main(int argc, char *argv[]) {
   {
 #pragma omp for  
     for (i=0; i<number_points_of_data; ++i) {
-      std::string not_flipped_params_file_name =
-	"optimal-parameters-data-point-" + std::to_string(i) +
-	"-not-flipped-kriging-test-number-points-1040-rho_basis-0.90-sigma_x_basis-0.50-sigma_y_basis-0.15-dx_likelihood-0.001.csv";
-      std::ifstream not_flipped_params_file(not_flipped_params_file_name);
-      parameters_nominal not_flipped_params = parameters_nominal();
-      not_flipped_params_file >> not_flipped_params;
+      // std::string not_flipped_params_file_name =
+      // 	"optimal-parameters-data-point-" + std::to_string(i) +
+      // 	"-not-flipped-kriging-test-number-points-1040-rho_basis-0.90-sigma_x_basis-0.50-sigma_y_basis-0.15-dx_likelihood-0.001.csv";
+      // std::ifstream not_flipped_params_file(not_flipped_params_file_name);
+      // parameters_nominal not_flipped_params = parameters_nominal();
+      // not_flipped_params_file >> not_flipped_params;
       
       if (points_for_kriging_not_flipped[i].size() > 6) {
 	GPs_not_flipped[i] = GaussianInterpolatorWithChecker(points_for_integration,
@@ -125,12 +125,12 @@ int main(int argc, char *argv[]) {
       }
       GPs_not_flipped[i].optimize_parameters();
 
-      std::string flipped_params_file_name =
-	"optimal-parameters-data-point-" + std::to_string(i) +
-	"-not-flipped-kriging-test-number-points-1040-rho_basis-0.90-sigma_x_basis-0.50-sigma_y_basis-0.15-dx_likelihood-0.001.csv";
-      std::ifstream flipped_params_file(flipped_params_file_name);
-      parameters_nominal flipped_params = parameters_nominal();
-      flipped_params_file >> flipped_params;
+      // std::string flipped_params_file_name =
+      // 	"optimal-parameters-data-point-" + std::to_string(i) +
+      // 	"-not-flipped-kriging-test-number-points-1040-rho_basis-0.90-sigma_x_basis-0.50-sigma_y_basis-0.15-dx_likelihood-0.001.csv";
+      // std::ifstream flipped_params_file(flipped_params_file_name);
+      // parameters_nominal flipped_params = parameters_nominal();
+      // flipped_params_file >> flipped_params;
       if (points_for_kriging_flipped[i].size() > 6) {
 	GPs_flipped[i] = GaussianInterpolatorWithChecker(points_for_integration,
 							 points_for_kriging_flipped[i]);
@@ -288,6 +288,9 @@ int main(int argc, char *argv[]) {
       output_file << "lines(rhos, exp(lls.rho) / exp(2*(lls.rho.std)), col=2);\n";
     }
   }
+
+
+
 //   // PLOTTING T //
 //   std::ofstream output_file(output_file_name);
 //   unsigned M = 100;
