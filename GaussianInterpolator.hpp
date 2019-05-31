@@ -358,7 +358,7 @@ struct likelihood_point {
       //
       sigma_y_tilde = tau_x/tau_y;
       //
-      t_tilde = std::pow(tau_y, 2);
+      t_tilde = t*std::pow(tau_y, 2);
     }
 
     rho = BM.get_rho();
